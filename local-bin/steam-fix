@@ -1,0 +1,420 @@
+#!/usr/bin/env python3
+# steam-fix — aplica fixes conocidos de juegos de Steam en Linux/Proton. Autor: Kyu
+#
+# Parchea juegos que no corren bien bajo Proton/Linux. Pensado para Kyu OS pero
+# generalizado para que sirva en otras maquinas y GPUs.
+#
+# Fixes incluidos:
+#   - The Elder Scrolls V: Skyrim (original/Legendary, AppID 72850):
+#       el video de intro Bink (Data/Video/BGS_Logo.bik) no se decodifica bajo
+#       Proton y el juego se cuelga en el logo de Bethesda. Fix: renombrar el .bik
+#       a .bak para que salte el intro. UNIVERSAL (no depende de la GPU).
+#   - Big Tower Tiny Square (AppID 751250, motor NW.js/Chromium):
+#       el proceso de GPU de Chromium se cae bajo Proton -> pantalla negra con
+#       audio, o artefactos (niebla negra sobre el blanco). Fix: forzar la ruta
+#       de ANGLE via opcion de lanzamiento. d3d9 (via DXVK) funciona en todas las
+#       GPUs; CONFIRMADO en Intel Iris Xe. Para AMD/Nvidia d3d9 tambien sirve de
+#       base; las alternativas (vulkan/gl) van como override por si rinde mejor.
+#
+# Uso:
+#   steam-fix                 detecta GPU y aplica los fixes
+#   steam-fix --dry-run       muestra que haria sin tocar nada
+#   steam-fix --intel|--amd|--nvidia   fuerza la GPU (default: autodetectada)
+#   steam-fix --angle=VALOR   fuerza la ruta ANGLE (d3d9|gl|d3d11|vulkan)
+#   steam-fix --help
+#
+# Nota: el fix de Big Tower edita las opciones de lanzamiento (localconfig.vdf).
+# Steam DEBE estar cerrado, porque al cerrar reescribe ese archivo y pisaria el
+# cambio. El script lo detecta y avisa. Hace backup antes de tocar.
+
+import os
+import sys
+import shutil
+import subprocess
+
+# ── colores (estetica Kyu) ──
+P = "\033[0;35m"; G = "\033[0;32m"; Y = "\033[1;33m"
+R = "\033[0;31m"; D = "\033[2m";    N = "\033[0m"
+
+AYUDA = __doc__ if __doc__ else """steam-fix — fixes de juegos de Steam bajo Proton.
+  steam-fix                aplica los fixes
+  steam-fix --dry-run      simula sin tocar nada
+  steam-fix --intel|--amd|--nvidia   fuerza la GPU
+  steam-fix --angle=d3d9|gl|d3d11|vulkan   fuerza la ruta ANGLE
+  steam-fix --help"""
+
+# ──────────────────────────────────────────────────────────────────────────
+#  Mini parser/serializer de VDF (el formato de texto de Valve: appmanifest,
+#  libraryfolders, localconfig). Claves case-insensitive como las trata Steam.
+# ──────────────────────────────────────────────────────────────────────────
+def _vdf_tokenize(text):
+    toks = []
+    i, n = 0, len(text)
+    while i < n:
+        c = text[i]
+        if c in " \t\r\n":
+            i += 1
+        elif c == "/" and i + 1 < n and text[i + 1] == "/":
+            while i < n and text[i] != "\n":
+                i += 1
+        elif c in "{}":
+            toks.append(c); i += 1
+        elif c == '"':
+            i += 1; buf = []
+            while i < n and text[i] != '"':
+                if text[i] == "\\" and i + 1 < n:
+                    nx = text[i + 1]
+                    buf.append({"n": "\n", "t": "\t", "\\": "\\", '"': '"'}.get(nx, nx))
+                    i += 2
+                else:
+                    buf.append(text[i]); i += 1
+            i += 1
+            toks.append(("s", "".join(buf)))
+        else:
+            buf = []
+            while i < n and text[i] not in ' \t\r\n{}"':
+                buf.append(text[i]); i += 1
+            toks.append(("s", "".join(buf)))
+    return toks
+
+
+def vdf_parse(text):
+    toks = _vdf_tokenize(text)
+    pos = [0]
+
+    def pairs():
+        d = {}
+        while pos[0] < len(toks):
+            t = toks[pos[0]]
+            if t == "}":
+                pos[0] += 1
+                break
+            key = t[1]; pos[0] += 1
+            if pos[0] >= len(toks):
+                break
+            nxt = toks[pos[0]]
+            if nxt == "{":
+                pos[0] += 1
+                d[key] = pairs()
+            elif nxt == "}":
+                d[key] = ""
+            else:
+                d[key] = nxt[1]; pos[0] += 1
+        return d
+
+    return pairs()
+
+
+def _esc(s):
+    return str(s).replace("\\", "\\\\").replace('"', '\\"')
+
+
+def vdf_dump(node, indent=0):
+    pad = "\t" * indent
+    lines = []
+    for k, v in node.items():
+        if isinstance(v, dict):
+            lines.append(f'{pad}"{_esc(k)}"')
+            lines.append(pad + "{")
+            inner = vdf_dump(v, indent + 1)
+            if inner:
+                lines.append(inner)
+            lines.append(pad + "}")
+        else:
+            lines.append(f'{pad}"{_esc(k)}"\t\t"{_esc(v)}"')
+    return "\n".join(lines)
+
+
+def vdf_key_ci(node, key):
+    """Devuelve la clave real (respetando case) que coincide con key, o None."""
+    if key in node:
+        return key
+    lk = key.lower()
+    for k in node:
+        if k.lower() == lk:
+            return k
+    return None
+
+
+def vdf_nav(node, path, create=False):
+    """Navega un path de claves case-insensitive. Crea bloques si create=True."""
+    cur = node
+    for p in path:
+        real = vdf_key_ci(cur, p)
+        if real is None:
+            if not create:
+                return None
+            cur[p] = {}
+            real = p
+        if not isinstance(cur[real], dict):
+            if not create:
+                return None
+            cur[real] = {}
+        cur = cur[real]
+    return cur
+
+
+def _read_vdf(path):
+    with open(path, encoding="utf-8", errors="replace") as f:
+        return vdf_parse(f.read())
+
+
+# ──────────────────────────────────────────────────────────────────────────
+#  Deteccion de entorno
+# ──────────────────────────────────────────────────────────────────────────
+def detectar_gpu():
+    try:
+        out = subprocess.run(["lspci"], capture_output=True, text=True, timeout=5).stdout
+    except Exception:
+        return "desconocida"
+    blob = " ".join(
+        l for l in out.splitlines() if any(k in l for k in ("VGA", "3D", "Display"))
+    ).lower()
+    if "nvidia" in blob:
+        return "nvidia"
+    if any(k in blob for k in ("amd", "ati", "radeon", "advanced micro")):
+        return "amd"
+    if "intel" in blob:
+        return "intel"
+    return "desconocida"
+
+
+def steam_roots():
+    cands = [
+        "~/.local/share/Steam",
+        "~/.steam/steam",
+        "~/.steam/root",
+        "~/.var/app/com.valvesoftware.Steam/.local/share/Steam",  # flatpak
+    ]
+    out, seen = [], set()
+    for c in cands:
+        p = os.path.realpath(os.path.expanduser(c))
+        if os.path.isdir(p) and p not in seen:
+            seen.add(p); out.append(p)
+    return out
+
+
+def bibliotecas(roots):
+    """Lista de carpetas steamapps de todas las bibliotecas (incl. otros discos)."""
+    out, seen = [], set()
+
+    def add(sp):
+        if os.path.isdir(sp) and sp not in seen:
+            seen.add(sp); out.append(sp)
+
+    for root in roots:
+        for vdfp in (
+            os.path.join(root, "steamapps", "libraryfolders.vdf"),
+            os.path.join(root, "config", "libraryfolders.vdf"),
+        ):
+            if not os.path.isfile(vdfp):
+                continue
+            try:
+                data = _read_vdf(vdfp)
+            except Exception:
+                continue
+            lf = data.get(vdf_key_ci(data, "libraryfolders") or "", {})
+            if isinstance(lf, dict):
+                for _, v in lf.items():
+                    if isinstance(v, dict) and v.get("path"):
+                        add(os.path.join(v["path"], "steamapps"))
+        add(os.path.join(root, "steamapps"))
+    return out
+
+
+def steam_corriendo():
+    try:
+        return subprocess.run(["pgrep", "-x", "steam"],
+                              capture_output=True).returncode == 0
+    except Exception:
+        return False
+
+
+# ──────────────────────────────────────────────────────────────────────────
+#  Localizar un juego instalado (por appmanifest -> AppID y installdir reales)
+# ──────────────────────────────────────────────────────────────────────────
+def buscar_juego(libs, appid, name_substr=None, name_excl=None):
+    # 1) por appmanifest_<appid>.acf (lo mas fiable)
+    for sp in libs:
+        acf = os.path.join(sp, f"appmanifest_{appid}.acf")
+        if os.path.isfile(acf):
+            try:
+                st = _read_vdf(acf)
+                st = st.get(vdf_key_ci(st, "AppState") or "", {})
+            except Exception:
+                st = {}
+            full = os.path.join(sp, "common", st.get("installdir", ""))
+            if os.path.isdir(full):
+                return str(appid), full
+    # 2) fallback por nombre (otra version, AppID distinto)
+    if name_substr:
+        for sp in libs:
+            try:
+                entradas = os.listdir(sp)
+            except OSError:
+                continue
+            for f in entradas:
+                if not (f.startswith("appmanifest_") and f.endswith(".acf")):
+                    continue
+                try:
+                    st = _read_vdf(os.path.join(sp, f))
+                    st = st.get(vdf_key_ci(st, "AppState") or "", {})
+                except Exception:
+                    continue
+                nm = st.get("name", "")
+                if name_substr.lower() in nm.lower():
+                    if name_excl and name_excl.lower() in nm.lower():
+                        continue
+                    full = os.path.join(sp, "common", st.get("installdir", ""))
+                    if os.path.isdir(full):
+                        return str(st.get("appid", appid)), full
+    return None, None
+
+
+# ──────────────────────────────────────────────────────────────────────────
+#  FIX 1 — Skyrim (Oldrim): renombrar el video de intro Bink
+# ──────────────────────────────────────────────────────────────────────────
+def fix_skyrim(libs, dry):
+    _, instal = buscar_juego(libs, "72850",
+                             "The Elder Scrolls V: Skyrim",
+                             name_excl="Special Edition")
+    if not instal:
+        return [("skip", "Skyrim (Oldrim): no instalado")]
+    video = os.path.join(instal, "Data", "Video")
+    bik = os.path.join(video, "BGS_Logo.bik")
+    bak = bik + ".bak"
+    if not os.path.isfile(bik):
+        if os.path.isfile(bak):
+            return [("ya", "Skyrim: intro ya parchada (BGS_Logo.bik.bak)")]
+        return [("skip", f"Skyrim: no encuentro BGS_Logo.bik en {video}")]
+    if dry:
+        return [("cambiaria", f"Skyrim: renombraria BGS_Logo.bik -> .bak en {video}")]
+    os.rename(bik, bak)
+    return [("aplicado", "Skyrim: BGS_Logo.bik -> .bak (salta el intro Bink que cuelga bajo Proton)")]
+
+
+# ──────────────────────────────────────────────────────────────────────────
+#  FIX 2 — Big Tower Tiny Square (NW.js): opcion de lanzamiento --use-angle
+# ──────────────────────────────────────────────────────────────────────────
+def _set_launch_option(lc, appid, launch, dry):
+    cuenta = os.path.basename(os.path.dirname(os.path.dirname(lc)))
+    try:
+        data = _read_vdf(lc)
+    except Exception as e:
+        return ("error", f"no pude leer localconfig ({cuenta}): {e}")
+    apps = vdf_nav(data, ["UserLocalConfigStore", "Software", "Valve", "Steam", "apps"], create=True)
+    if apps is None:
+        return ("error", f"estructura inesperada en localconfig ({cuenta})")
+    real = vdf_key_ci(apps, str(appid))
+    if real is None:
+        apps[str(appid)] = {}
+        real = str(appid)
+    if not isinstance(apps[real], dict):
+        apps[real] = {}
+    block = apps[real]
+    lo = vdf_key_ci(block, "LaunchOptions") or "LaunchOptions"
+    if block.get(lo) == launch:
+        return ("ya", f"Big Tower: opcion ya estaba puesta ({cuenta})")
+    if dry:
+        return ("cambiaria", f"Big Tower: pondria LaunchOptions=\"{launch}\" ({cuenta})")
+    block[lo] = launch
+    shutil.copy2(lc, lc + ".bak")
+    with open(lc, "w", encoding="utf-8") as f:
+        f.write(vdf_dump(data) + "\n")
+    return ("aplicado", f"Big Tower: LaunchOptions=\"{launch}\" ({cuenta}, backup .bak)")
+
+
+def fix_bigtower(roots, libs, angle, dry):
+    aid, instal = buscar_juego(libs, "751250", "Big Tower Tiny Square")
+    if not instal:
+        return [("skip", "Big Tower Tiny Square: no instalado")]
+    aid = aid or "751250"
+    launch = f"%command% --use-angle={angle}"
+    if steam_corriendo():
+        return [("warn", "Steam esta ABIERTO: cierralo y vuelve a correr (al cerrar pisa la opcion). "
+                         f"O ponla a mano: {launch}")]
+    localconfigs = []
+    for root in roots:
+        ud = os.path.join(root, "userdata")
+        if not os.path.isdir(ud):
+            continue
+        for sid in os.listdir(ud):
+            lc = os.path.join(ud, sid, "config", "localconfig.vdf")
+            if os.path.isfile(lc):
+                localconfigs.append(lc)
+    if not localconfigs:
+        return [("skip", f"no encuentro localconfig.vdf; pon la opcion a mano: {launch}")]
+    return [_set_launch_option(lc, aid, launch, dry) for lc in localconfigs]
+
+
+# ──────────────────────────────────────────────────────────────────────────
+#  GPU -> ruta ANGLE recomendada para juegos NW.js/Chromium
+# ──────────────────────────────────────────────────────────────────────────
+ANGLE_POR_GPU = {
+    "intel":       ("d3d9", "confirmado en Iris Xe"),
+    "amd":         ("d3d9", "estable via DXVK; si falla prueba --angle=vulkan"),
+    "nvidia":      ("d3d9", "estable via DXVK; si falla prueba --angle=gl"),
+    "desconocida": ("d3d9", "default seguro via DXVK"),
+}
+
+
+def _estado(estado, msg):
+    col, tag = {
+        "aplicado":  (G, "[OK]"),
+        "ya":        (D, "[=]"),
+        "cambiaria": (Y, "[~]"),
+        "skip":      (D, "[-]"),
+        "warn":      (Y, "[!]"),
+        "error":     (R, "[x]"),
+    }.get(estado, (N, "[?]"))
+    print(f"  {col}{tag}{N} {msg}")
+
+
+def main():
+    dry = False
+    gpu_forzada = None
+    angle_forzado = None
+    for a in sys.argv[1:]:
+        if a in ("--dry-run", "-n"):
+            dry = True
+        elif a == "--intel":
+            gpu_forzada = "intel"
+        elif a == "--amd":
+            gpu_forzada = "amd"
+        elif a == "--nvidia":
+            gpu_forzada = "nvidia"
+        elif a.startswith("--angle="):
+            angle_forzado = a.split("=", 1)[1].strip()
+        elif a in ("--help", "-h"):
+            print(AYUDA)
+            return 0
+        else:
+            print(f"{R}Argumento no reconocido: {a}{N}\n")
+            print(AYUDA)
+            return 2
+
+    gpu = gpu_forzada or detectar_gpu()
+    angle_def, nota = ANGLE_POR_GPU.get(gpu, ANGLE_POR_GPU["desconocida"])
+    angle = angle_forzado or angle_def
+
+    print(f"{P}steam-fix{N}  GPU: {G}{gpu}{N}  ·  ANGLE: {G}{angle}{N} {D}({nota}){N}")
+    if dry:
+        print(f"{Y}[dry-run] no se modifica nada{N}")
+
+    roots = steam_roots()
+    if not roots:
+        print(f"{R}No encuentro la instalacion de Steam.{N}")
+        return 1
+    libs = bibliotecas(roots)
+
+    for estado, msg in fix_skyrim(libs, dry):
+        _estado(estado, msg)
+    for estado, msg in fix_bigtower(roots, libs, angle, dry):
+        _estado(estado, msg)
+
+    print("\u2713 terminado")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
