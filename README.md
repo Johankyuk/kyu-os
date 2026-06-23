@@ -1,314 +1,305 @@
-**Setup Master — CachyOS → Kyu OS (Niri + Noctalia)**  
-Script de restauración automática del sistema. Convierte una instalación base de  
-   
- CachyOS en un entorno Kyu OS completo: instala las apps, despliega tus dotfiles  
-   
- de Niri/Noctalia, aplica el tema morado, el cursor, el login y el branding de  
-   
- arranque, y deja la batería con límite de carga.  
-![](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAnEAAAACCAYAAAA3pIp+AAAABmJLR0QA/wD/AP+gvaeTAAAACXBIWXMAAA7EAAAOxAGVKw4bAAAANklEQVR4nO3OMQ2AABAAsSNBCkLfFR7wwIgHRiywEZJWQZeZ2ao9AAD+4lyruzq+ngAA8Nr1AOIEBeX8aGZPAAAAAElFTkSuQmCC)  
-**Instalación rápida**  
-Sobre una **CachyOS** recién instalada, un solo comando deja Kyu OS completo:  
-bash <(curl -fsSL https://raw.githubusercontent.com/Johankyuk/kyu-os/main/bootstrap.sh)  
-   
-El bootstrap instala git, clona este repo en ~/kyu-os y lanza el setup.  
-   
- Para clonar en otra ruta, exporta  
-   
- KYU_OS_DIR=~/otra/ruta antes. Si ya tienes el repo clonado, salta el bootstrap y  
-   
- corre kyu-setup directo.  
-![](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAnEAAAACCAYAAAA3pIp+AAAABmJLR0QA/wD/AP+gvaeTAAAACXBIWXMAAA7EAAAOxAGVKw4bAAAANUlEQVR4nO3OYQ1AABSAwY8JoIGqr4Z6Eoiggn9mu0twy8wc1RkAAH9xbdVa7V9PAAB47X4A9C4EIsmYmgsAAAAASUVORK5CYII=)  
-**Requisitos previos**  
-Antes de correr el script:  
-- **CachyOS** instalado (base funcional, con systemd-boot como bootloader).  
-- **AUR helper**: paru o yay. Necesario para instalar; los modos  
- kyu-sync, kyu-check y kyu-dry no lo requieren.  
-- **Conexión a internet** estable; se descargan bastantes paquetes.  
-- Usuario con permisos **sudo**. El script pide la contraseña al inicio y la  
-   
- mantiene viva mientras corre (no la vuelve a pedir a mitad).  
-- **No** se corre como root: el script aborta si detecta sudo bash ....  
-**Estructura de archivos**  
-El repo vive en ~/kyu-os/ (donde lo clona el bootstrap). El script busca sus  
-   
- recursos (configs, tema de SDDM, imágenes) **en su misma carpeta**, así que  
-   
- funciona sin importar desde dónde se ejecute, mientras todo el contenido esté  
-   
- junto:  
-~/kyu-os/  
- ├── setup_master.sh  
- ├── README.md  
- ├── config/                 <- dotfiles que se despliegan en ~/.config  
- │   ├── niri/                  (config.kdl + cfg/*.kdl: focus ring, keybinds…)  
- │   ├── noctalia/              (settings.json)  
- │   └── foot/                  (foot.ini)  
- ├── local-bin/              <- scripts personales → ~/.local/bin (puede ir vacío)  
- ├── sugar-dark-kyu/         <- tema SDDM pre-customizado  [LO APORTAS TÚ]  
- │   ├── theme.conf             (colores morados, reloj 12h, traducciones)  
- │   ├── Main.qml  
- │   ├── KyuHE.jpeg             <- fondo de SDDM (systemd-boot no usa fondo de imagen)  
- │   └── ...  
- ├── PFP/                    <- foto(s) de perfil; Noctalia las lee de aquí   [LO APORTAS TÚ]  
- └── Wallpapers/             <- wallpapers; Noctalia los lee de aquí          [LO APORTAS TÚ]  
-   
-config/ es la **fuente de verdad** de los dotfiles: se despliega sobre  
-   
- ~/.config en cada corrida. Edita las configs aquí (en el repo), no en ~/.config  
-   
- directo, o el siguiente deploy las pisa.  
-Las carpetas marcadas no vienen en el paquete:  
-Si sugar-dark-kyu/ falta, SDDM queda con su tema por defecto; el  
-   
- branding del menú de arranque (título "Kyu OS") no depende de ese tema y se aplica  
-   
- igual. El resto del setup funciona igual.  
-**Uso**  
-Si usaste el bootstrap, el setup ya corrió. Para re-ejecutarlo luego, usa el atajo  
-   
- kyu-setup desde cualquier carpeta (la primera vez, sin atajos aún:  
-   
- bash ~/kyu-os/setup_master.sh):  
-kyu-setup              # muestra el plan, pide confirmación y procede  
- kyu-dry                # opcional: solo el plan, sin tocar nada ni preguntar  
-   
-La corrida normal **muestra primero el plan** (qué instalaría y qué configs  
-   
- desplegaría) y **pide confirmación** (¿Proceder? [s/N]) antes de tocar nada. Solo  
-   
- continúa si respondes s; cualquier otra cosa cancela sin modificar el sistema. Ya  
-   
- no hace falta simular y luego correr de nuevo: es un solo paso. kyu-dry  
-   
- queda como atajo para solo inspeccionar el plan y salir.  
-**Reinicio:** la  **primera corrida completa reinicia el equipo solo** (cuenta de  
-   
- 10 s con Ctrl+C para cancelar), para aplicar todo de una. A partir de la segunda  
-   
- corrida ya no reinicia: solo avisa con sudo reboot si algún cambio lo amerita.  
-   
- Con kyu-solo nunca reinicia (es parcial).  
-**Atajos (quedan en PATH tras la primera corrida)**  
-| | |  
-|-|-|  
-| **Comando** | **Qué hace** |   
-| kyu-setup | Corre el setup desde cualquier carpeta (muestra el plan y pide confirmación) |   
-| kyu-update | Actualiza todo: mirrors + repos/AUR (paru -Syu) y Flatpaks |   
-| kyu-check | Healthcheck: valida que todo quedó bien |   
-| kyu-sync | Vuelca tu ~/.config actual de vuelta al repo, listo para commitear |   
-| kyu-dry | Simula la corrida completa sin tocar nada |   
-| kyu-solo | Corre solo la(s) sección(es) que indiques: kyu-solo lista las muestra, kyu-solo cursor corre una, kyu-solo 7,9 por número. No reinicia |   
-| kyu-limpia | Borra restos de versiones viejas del setup (PFP/Wallpapers en ~/Imágenes, log viejo del repo) y sale. Pide confirmación; no toca el sistema |   
-| kyu-verifica | Compara los dotfiles del repo vs tu ~/.config activa, sin tocar nada |   
-| apps | Lista o lanza cualquier app, **incluidas las ocultas** del launcher: apps lista (id → nombre), apps <id> lanza |   
-| proyectar | Gestión de monitores; proyectar toggle (Mod+P) alterna duplicar ↔ extendido |   
-   
-El launcher de Noctalia queda **minimalista**: solo se muestran las apps de uso  
-   
- diario (navegador, ofimática, multimedia, etc.); el resto sigue instalado pero  
-   
- oculto. Para correr algo oculto usa apps o la terminal (Mod+Return).  
-![](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAnEAAAACCAYAAAA3pIp+AAAABmJLR0QA/wD/AP+gvaeTAAAACXBIWXMAAA7EAAAOxAGVKw4bAAAANklEQVR4nO3OQQmAABRAsSfYxZo/jVEMYQLPJrCCNxG2BFtmZquOAAD4i3Ot7mr/egIAwGvXA4rLBc059ysnAAAAAElFTkSuQmCC)  
-**Migrar a otra máquina**  
-Con el repo en git, migrar es trivial. El despliegue es **unidireccional** (el repo  
-   
- pisa ~/.config), así que lo que ajustes por GUI vive solo en el activo hasta que  
-   
- lo vuelques al repo. Antes de migrar hay que capturar ese estado, o el setup  
-   
- desplegará una versión vieja en la máquina nueva.  
-**En la máquina vieja (origen)** — captura y sube tus cambios:  
-kyu-sync                       # vuelca ~/.config -> repo (niri, foot, noctalia)  
- cd ~/kyu-os  
- git add -A && git commit -m "sync configs" && git push  
-   
-kyu-sync deja un respaldo del repo previo en .repo-backup-<fecha>/ por si algo  
-   
- se volcó mal, y es idempotente: si el repo ya refleja tu activo, no toca nada.  
-**En la máquina nueva (destino)** — un solo comando:  
-bash <(curl -fsSL https://raw.githubusercontent.com/Johankyuk/kyu-os/main/bootstrap.sh)  
-   
-Eso clona el repo e instala apps, despliega dotfiles, aplica tema/cursor/login/  
-   
- branding y deja la batería con límite. Cierra sesión y entra de nuevo, y listo.  
-**Regla de oro:** tocas algo por GUI → kyu-sync + commit antes de cerrar. Así el  
-   
- repo siempre está al día y la máquina nueva es un solo comando.  
-![](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAnEAAAACCAYAAAA3pIp+AAAABmJLR0QA/wD/AP+gvaeTAAAACXBIWXMAAA7EAAAOxAGVKw4bAAAANUlEQVR4nO3OMQ2AABAAsSNhQAQ60PcrIhnxgQU2QtIq6DIze3UGAMBf3Gu1VcfXEwAAXrseS14EKxPCORkAAAAASUVORK5CYII=)  
-**Qué hace**  
-El setup corre en 13 secciones. Un fallo en una no detiene las demás; al final se  
-   
- listan los fallos reales (no pinta ✔ en todo a ciegas).  
-1. **Snapshot pre-setup** — crea un snapshot con snapper antes de tocar nada  
-   
- (red de seguridad; solo si snapper está configurado para root).  
-2. **Actualizar sistema** — pacman -Syu.  
-3. **Paquetes de repos** — Niri, Zen, Discord, Code-OSS, Steam, LibreOffice,  
-   
- OBS, Audacity, VLC, mpv, imv, Foot, Thunar + plugins, fuentes Nerd, etc., **en una sola**  
- **  
- transacción**.  
-4. **Paquetes AUR** — Noctalia, YouTube Music, juguetes de terminal, Catppuccin,  
-   
- Bibata, rar, **en una sola invocación** del helper. El batch es no-interactivo:  
-   
- salta la revisión de PKGBUILD (--skipreview) y resuelve solo el conflicto de  
- rar con unrar (ver Advertencias).  
-5. **Sober (Roblox)** — vía Flatpak, con su config.json y fflags.  
-6. **Configs + scripts** — despliega config/ en ~/.config (Niri, Noctalia,  
-   
- Foot) con backup de lo previo, copia local-bin/ y elimina apps conflictivas.  
-   
- El foot.ini se despliega con la **sintaxis moderna** ya normalizada  
-   
- ([colors-dark] e initial-color-theme=dark; mata los warnings de foot ≥1.23).  
-7. **Generables** — color scheme "Kyu OS" para Noctalia,  **reloj en 12h (AM/PM)**  
-   
- en la barra/lockscreen, fix de ventana negra de Steam en Wayland, fastfetch con  
-   
- logo ASCII propio y nombre "Kyu OS".  
-8. **GTK / iconos / Thunar** — Catppuccin Mocha Mauve, Papirus violet, Thunar como  
-   
- gestor por defecto, portal del selector de archivos en tono morado.  
-9. **Cursor morado Bibata** — genera y aplica Bibata-Modern-Purple en todos los  
-   
- entornos (XWayland, Qt, Flatpak). Es lo lento; se omite si ya está generado.  
-10. **SDDM Sugar-Dark** — pantalla de login morada en español, con el  **reloj en**  
- **  
- 12h (AM/PM)**.  
-11. **Branding Kyu OS (systemd-boot)** — el menú de arranque muestra "Kyu OS" /  
-   
- "Kyu OS (LTS)"; el arranque queda en negro (sin splash). El apagado sigue  
-   
- mostrando unas líneas finales de systemd-shutdown (ver nota de branding).  
-12. **Recursos y energía** — verifica que PFP/ y Wallpapers/ estén presentes en  
-   
- el repo (Noctalia los lee de ahí; ya **no** se copian a ~/Imágenes) y configura  
-   
- el límite de carga de batería.  
-13. **Utilidad de proyección** — instala ~/.local/bin/proyectar para manejar el  
-   
- monitor externo en caliente vía IPC de Niri (extender / solo-externo / solo-laptop  
-   
- / espejo). Niri no clona salidas de forma nativa; el modo extender es el robusto  
-   
- para presentar.  
-**Advertencias**  
-El script **elimina** software que considera redundante:  
-- Navegadores: Firefox, Chromium, Chrome, Brave — deja solo Zen.  
-- Terminales: Alacritty, Kitty, WezTerm — deja solo Foot.  
-- Gestores de archivos: Nautilus, Dolphin, Nemo, Caja, PCManFM — deja solo Thunar.  
-El despliegue de configs **respalda** lo previo en ~/.config-backup-<fecha>/  
-   
- antes de sobrescribir, así que no pierdes lo que ya tenías.  
-El branding "Kyu OS" es **puramente visual**: el sistema sigue siendo CachyOS por  
-   
- debajo. No se modifica ningún paquete ni /etc/os-release.  
-El paquete rar es software **propietario** (freeware de RARLab). Como rar  
-   
- entra en conflicto con unrar (de los repos) y trae su propio unrar, el script  
-   
- **quita ** **unrar** ** automáticamente** antes de instalar rar. Esto es necesario: sin  
-   
- ese paso, el conflicto detiene la transacción de pacman al final del batch AUR (con  
-   
- --noconfirm responde "No" al reemplazo) y arrastra a todos los demás paquetes del  
-   
- batch con él. Si la build de rar falla, los .rar solo se podrán extraer, no crear;  
-   
- el resto continúa.  
-**Después de instalar**  
-- **Teclado latam**: tu layout vive a nivel sistema, no en la config de Niri; en  
-   
- una máquina limpia configúralo con localectl si hace falta.  
-   
-   
-- Verifícalo con cat /sys/class/power_supply/BAT0/charge_control_end_threshold;  
-   
- si pasa, hace falta un hook de systemd-sleep.  
-- Cierra sesión y vuelve a entrar (cursor y SDDM); luego sudo reboot.  
-- Corre kyu-check para validar que todo quedó.  
-**Notas técnicas**  
-**Configs por carpeta.** El despliegue de config/ reemplaza los antiguos parches  
-   
- sed/heredoc de focus ring, keybinds, cursor y gestures: ahora vienen ya correctos  
-   
- en los .kdl. Editas el archivo, no el script.  
-**Instalación agrupada.** Repos en una transacción de pacman y AUR en una del  
-   
- helper, en vez de una llamada por paquete. En máquina ya configurada, la parte de  
-   
- paquetes pasa de minutos a segundos (cada paquete presente se omite con --needed).  
-**Branding de systemd-boot.** El título del menú no es configurable de forma fiable  
-   
- en esta versión de sdboot-manage: su autogen lo deriva del nombre del kernel  
-   
- (linux-cachyos → "Linux Cachyos"), ignorando ENTRY_TITLE. Por eso el branding va  
-   
- en dos frentes: el arranque silencioso (negro) vive en LINUX_OPTIONS de  
-   
- /etc/sdboot-manage.conf (lo respeta cada autogen), con DEFAULT_ENTRY="manual"  
-   
- para no pisar default @saved; y el título lo fija /usr/local/bin/kyu-os-title  
-   
- (idempotente), que un hook de pacman zzz-kyu-branding.hook reaplica tras cada  
-   
- autogen (corre después de sdboot-kernel-update.hook). El splash de CachyOS se  
-   
- apaga por completo: Plymouth fuera del initramfs (HOOKS de /etc/mkinitcpio.conf +  
-   
- mkinitcpio -P) Y plymouth-start.service enmascarado (CachyOS también lo arranca  
-   
- por systemd). Para revertir: borra el script y el hook, quita los tokens extra de  
-   
- LINUX_OPTIONS, y systemctl unmask plymouth-start.service.  
-**Apagado: limitación conocida.** Por defecto systemd-shutdown sube el nivel del  
-   
- kernel (bump_sysctl_printk_log_level) en su fase final, antes de matar los procesos  
-   
- restantes, así que el "killing processes" aparece aunque el cmdline lleve  
-   
- quiet/loglevel=3. No hay arreglo por cmdline: se probó systemd.log_target=journal  
-   
- (no funciona, y rompía el arranque negro) y meter Plymouth al initramfs para taparlo  
-   
- (en la Intel Iris Xe, Plymouth no sobrevive al pivot al shutdown-ramfs y además  
-   
- ensucia el boot, así que se descartó). Lo que **sí** se cerró: el "Broadcast message  
-   
- ... going down" (un *wall*) se elimina con --no-wall en las acciones shutdown/reboot  
-   
- de Noctalia (campo command en config/noctalia/settings.json). Estado final: arranque  
-   
- en negro, y apagado con las ~3-4 líneas de systemd-shutdown que parpadean <1 s, ya  
-   
- sin el broadcast.
-**Límite de batería.** Servicio systemd battery-charge-limit.service que escribe  
-   
- el umbral en charge_control_end_threshold en cada arranque. Independiente del  
-   
- gestor de energía (no usa TLP, que chocaría con power-profiles-daemon).  
-**Robustez.** set -uo pipefail sin set -e: un fallo aislado no aborta el setup.  
-   
- Guard de no-root, check de red, keep-alive de sudo, snapshot previo y resumen de  
-   
- fallos al final. Cada corrida queda registrada en ~/.local/state/kyu-os/logs/  
-   
- (un archivo por corrida; se conservan los 10 más recientes; setup-latest.log  
-   
- apunta al último).  
-**Idempotencia.** Seguro de correr varias veces: detecta lo ya instalado y lo omite,  
-   
- y reescribe configs/branding sin duplicar.  
-**Scripts auxiliares (ya integrados).** Lo que antes eran scripts sueltos vive ahora  
-   
- dentro del setup, así que puedes borrarlos:  
-- fix_foot.sh → la normalización de sintaxis de foot.ini ([6], copia temporal  
-   
- antes de desplegar; no toca el repo).  
-- reloj_12h.sh → el reloj 12h de Noctalia ([7], parche del settings.json) y de SDDM  
-   
- ([10], HourFormat en el theme.conf del tema).  
-- limpiar_huerfanos.sh → el atajo kyu-limpia.  
-- proyectar → se genera en ~/.local/bin/proyectar ([13]).  
+# Kyu OS — Setup Master (CachyOS → Niri + Noctalia)
+
+Script de restauración automática del sistema. Convierte una instalación base de **CachyOS** en un entorno **Kyu OS** completo: instala las apps, despliega tus dotfiles de Niri/Noctalia, aplica el tema morado **Horus**, el cursor, el login, el branding de arranque, configura Zen y deja la batería con límite de carga.
+
+**Idioma / Language:** [Español](#español) · [English](#english)
+
+---
+
+## Español
+
+### Instalación rápida
+
+Sobre una **CachyOS** recién instalada, un solo comando deja Kyu OS completo:
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/Johankyuk/kyu-os/main/bootstrap.sh)
+```
+
+El bootstrap instala git, clona este repo en `~/kyu-os` y lanza el setup. Para clonar en otra ruta, exporta `KYU_OS_DIR=~/otra/ruta` antes. Si ya tienes el repo clonado, salta el bootstrap y corre `kyu-setup` directo.
+
+### Requisitos previos
+
+- **CachyOS** instalado (base funcional, con systemd-boot como bootloader).
+- **AUR helper**: `paru` o `yay`. Necesario para instalar; los modos `kyu-sync`, `kyu-check` y `kyu-dry` no lo requieren.
+- **Conexión a internet** estable; se descargan bastantes paquetes.
+- Usuario con permisos **sudo**. El script pide la contraseña al inicio y la mantiene viva mientras corre.
+- **No** se corre como root: el script aborta si detecta `sudo bash …`.
+
+### Estructura de archivos
+
+El repo vive en `~/kyu-os/`. El script busca sus recursos en su misma carpeta, así que funciona sin importar desde dónde se ejecute mientras todo esté junto:
+
+```
+~/kyu-os/
+├── setup_master.sh
+├── README.md
+├── bootstrap.sh
+├── config/                  <- dotfiles que se despliegan en ~/.config
+│   ├── niri/                   (config.kdl + cfg/*.kdl: focus ring, keybinds…)
+│   ├── noctalia/               (settings.json)
+│   ├── foot/                   (foot.ini)
+│   └── zen/                    (tema Horus para Zen)
+│       ├── policies.json         (políticas de privacidad)
+│       ├── user.js               (prefs: userChrome, acento, telemetría off)
+│       ├── userChrome.css        (chrome Horus)
+│       ├── userContent.css       (acentos por sitio: YouTube, Claude)
+│       └── darkreader-horus.json (config de Dark Reader, import manual)
+├── local-bin/               <- scripts personales → ~/.local/bin
+├── sugar-dark-kyu/          <- tema SDDM pre-customizado  [LO APORTAS TÚ]
+├── PFP/                     <- foto(s) de perfil; Noctalia las lee de aquí  [LO APORTAS TÚ]
+└── Wallpapers/              <- wallpapers; Noctalia los lee de aquí          [LO APORTAS TÚ]
+```
+
+`config/` es la **fuente de verdad** de los dotfiles: se despliega sobre `~/.config` en cada corrida. Edita las configs aquí (en el repo), no en `~/.config` directo, o el siguiente deploy las pisa.
+
+### Uso
+
+```bash
+kyu-setup     # muestra el plan, pide confirmación y procede
+kyu-dry       # opcional: solo el plan, sin tocar nada ni preguntar
+```
+
+La corrida normal **muestra primero el plan** y **pide confirmación** (`¿Proceder? [s/N]`) antes de tocar nada. Solo continúa si respondes `s`.
+
+**Reinicio:** la **primera corrida completa reinicia el equipo solo** (cuenta de 10 s, `Ctrl+C` para cancelar). A partir de la segunda ya no reinicia. Con `kyu-solo` nunca reinicia (es parcial).
+
+### Atajos (quedan en PATH tras la primera corrida)
+
+| Comando | Qué hace |
+|---|---|
+| `kyu-setup` | Corre el setup desde cualquier carpeta (plan + confirmación) |
+| `kyu-update` | Actualiza todo: mirrors + repos/AUR (`paru -Syu`) y Flatpaks |
+| `kyu-check` | Healthcheck: valida que todo quedó bien |
+| `kyu-sync` | Vuelca tu `~/.config` actual de vuelta al repo, listo para commitear |
+| `kyu-dry` | Simula la corrida completa sin tocar nada |
+| `kyu-solo` | Corre solo la(s) sección(es) indicada(s): `kyu-solo lista`, `kyu-solo cursor`, `kyu-solo 7,9`. No reinicia |
+| `kyu-limpia` | Borra restos de versiones viejas del setup. Pide confirmación; no toca el sistema |
+| `kyu-verifica` | Compara los dotfiles del repo vs tu `~/.config` activa, sin tocar nada |
+| `apps` | Lista o lanza cualquier app, **incluidas las ocultas**: `apps` lista, `apps <id>` lanza |
+| `proyectar` | Gestión de monitores; `proyectar toggle` (Mod+P) alterna duplicar ↔ extendido |
+
+El launcher de Noctalia queda **minimalista**: solo apps de uso diario; el resto sigue instalado pero oculto. Para correr algo oculto usa `apps` o la terminal (Mod+Return).
+
+### Qué hace
+
+El setup corre en secciones modulares. Un fallo en una no detiene las demás; al final se listan los fallos reales.
+
+1. **Snapshot pre-setup** — snapshot con snapper antes de tocar nada (si está configurado para root).
+2. **Actualizar sistema** — `pacman -Syu`.
+3. **Paquetes de repos** — Niri, Zen, Code-OSS, Steam, LibreOffice, OBS, Audacity, VLC, mpv, imv, Foot, Thunar + plugins, fuentes Nerd, etc., en una sola transacción.
+4. **Paquetes AUR** — Noctalia, juguetes de terminal, Catppuccin, Bibata, rar, en una sola invocación del helper.
+5. **Flatpak** — instala la CLI de Flatpak y habilita el remoto **Flathub** (instalas apps desde flathub.org vía internet, sin tienda local).
+6. **Sober (Roblox)** — vía Flatpak, con su `config.json` y fflags.
+7. **Configs + scripts** — despliega `config/` en `~/.config` (Niri, Noctalia, Foot) con backup de lo previo, copia `local-bin/`. El `foot.ini` va con sintaxis moderna normalizada.
+8. **Generables** — color scheme "Kyu OS", reloj 12h (AM/PM), fix de ventana negra de Steam, fastfetch con logo ASCII en morado Horus (`c8a6f9`).
+9. **Limpieza del lanzador** — oculta del launcher las apps que no son de uso directo.
+10. **GTK / iconos / Thunar** — Papirus violet, Thunar por defecto, portal del selector en morado.
+11. **Cursor morado Bibata** — genera y aplica Bibata-Modern-Purple en todos los entornos. Es lo lento; se omite si ya está.
+12. **SDDM Sugar-Dark** — login morado en español con reloj 12h.
+13. **Branding Kyu OS (systemd-boot)** — menú de arranque "Kyu OS" / "Kyu OS (LTS)", arranque en negro.
+14. **Steam** — wrapper en `/usr/local/bin/steam` que antepone `-cef-disable-gpu` (fix de la pantalla negra del cliente CEF en la iGPU Intel).
+15. **Recursos y energía** — verifica PFP/ y Wallpapers/ en el repo y configura el límite de carga de batería.
+16. **Utilidad de proyección** — instala `proyectar` para manejar el monitor externo vía IPC de Niri.
+17. **Zen** — tema Horus para Zen nativo: `policies.json` a `/opt/zen-browser-bin/distribution/`, y `userChrome.css` + `userContent.css` + `user.js` a todos los perfiles de `~/.zen`. Las extensiones llegan por la **sincronización de tu cuenta Mozilla** al iniciar sesión; la paleta de **Dark Reader** se importa a mano (`darkreader-horus.json`).
+
+### Tema Horus
+
+Paleta morada derivada del ojo de Horus, aplicada en todo el stack (Noctalia, Niri, foot, fastfetch, SDDM, cursor, Zen):
+
+| Rol | Hex |
+|---|---|
+| Primary | `#8b45f7` |
+| Secondary | `#c44fe6` |
+| Tertiary | `#e85fb0` |
+| Error | `#fb5c7e` |
+| Base | `#18092b` |
+| Terminal | `#1c0e33` |
+
+### Advertencias
+
+El script **elimina** software redundante: navegadores (Firefox, Chromium, Chrome, Brave → deja Zen), terminales (Alacritty, Kitty, WezTerm → deja Foot), gestores de archivos (Nautilus, Dolphin, Nemo, Caja, PCManFM → deja Thunar).
+
+El despliegue de configs **respalda** lo previo en `~/.config-backup-<fecha>/` antes de sobrescribir.
+
+El branding "Kyu OS" es **puramente visual**: el sistema sigue siendo CachyOS por debajo; no se toca `/etc/os-release`.
+
+El paquete `rar` es propietario y entra en conflicto con `unrar`; el script quita `unrar` automáticamente antes de instalar `rar`.
+
+### Migrar a otra máquina
+
+El despliegue es **unidireccional** (el repo pisa `~/.config`), así que lo que ajustes por GUI vive solo en el activo hasta que lo vuelques al repo.
+
+**En la máquina vieja** — captura y sube:
+```bash
+kyu-sync
+cd ~/kyu-os && git add -A && git commit -m "sync configs" && git push
+```
+
+**En la máquina nueva** — un solo comando + los pasos manuales de Zen:
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/Johankyuk/kyu-os/main/bootstrap.sh)
+```
+Luego: instala `zen-browser-bin`, abre Zen una vez, `kyu-solo zen`, inicia sesión en tu cuenta Mozilla (trae las extensiones) e importa `config/zen/darkreader-horus.json` en Dark Reader.
+
+**Regla de oro:** tocas algo por GUI → `kyu-sync` + commit antes de cerrar.
+
+### Notas técnicas
+
+- **Configs por carpeta:** el despliegue de `config/` reemplaza los antiguos parches sed/heredoc. Editas el archivo, no el script.
+- **Instalación agrupada:** repos en una transacción de pacman, AUR en una del helper. En máquina ya configurada pasa de minutos a segundos (`--needed` omite lo presente).
+- **Branding systemd-boot:** el título lo fija `/usr/local/bin/kyu-os-title`, reaplicado por el hook `zzz-kyu-branding.hook` tras cada autogen. El splash de CachyOS se apaga (Plymouth fuera del initramfs + `plymouth-start.service` enmascarado).
+- **Apagado (limitación conocida):** `systemd-shutdown` sube el log level en su fase final, así que quedan ~3-4 líneas <1 s pese a `quiet`. El *broadcast* "going down" sí se eliminó con `--no-wall` en las acciones de Noctalia.
+- **Límite de batería:** servicio `battery-charge-limit.service` que escribe el umbral en cada arranque (no usa TLP).
+- **Robustez:** `set -uo pipefail` sin `set -e` (un fallo aislado no aborta). Guard de no-root, check de red, keep-alive de sudo, snapshot previo y resumen de fallos. Logs en `~/.local/state/kyu-os/logs/`.
+- **Idempotencia:** seguro de correr varias veces; detecta lo instalado y reescribe sin duplicar.
+
+---
+
+## English
+
+### Quick install
+
+On a freshly installed **CachyOS**, a single command sets up the full Kyu OS:
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/Johankyuk/kyu-os/main/bootstrap.sh)
+```
+
+The bootstrap installs git, clones this repo into `~/kyu-os`, and launches the setup. To clone elsewhere, export `KYU_OS_DIR=~/other/path` first. If the repo is already cloned, skip the bootstrap and run `kyu-setup` directly.
+
+### Requirements
+
+- **CachyOS** installed (working base, systemd-boot as bootloader).
+- **AUR helper**: `paru` or `yay`. Needed to install; the `kyu-sync`, `kyu-check`, and `kyu-dry` modes don't require it.
+- Stable **internet** connection; a fair number of packages are downloaded.
+- A user with **sudo**. The script asks once at the start and keeps it alive while running.
+- It does **not** run as root: the script aborts if it detects `sudo bash …`.
+
+### File layout
+
+The repo lives in `~/kyu-os/`. The script locates its resources within its own folder, so it works regardless of where it's run from as long as everything stays together:
+
+```
+~/kyu-os/
+├── setup_master.sh
+├── README.md
+├── bootstrap.sh
+├── config/                  <- dotfiles deployed into ~/.config
+│   ├── niri/                   (config.kdl + cfg/*.kdl: focus ring, keybinds…)
+│   ├── noctalia/               (settings.json)
+│   ├── foot/                   (foot.ini)
+│   └── zen/                    (Horus theme for Zen)
+│       ├── policies.json         (privacy policies)
+│       ├── user.js               (prefs: userChrome, accent, telemetry off)
+│       ├── userChrome.css        (Horus chrome)
+│       ├── userContent.css       (per-site accents: YouTube, Claude)
+│       └── darkreader-horus.json (Dark Reader config, manual import)
+├── local-bin/               <- personal scripts → ~/.local/bin
+├── sugar-dark-kyu/          <- pre-customized SDDM theme  [YOU PROVIDE]
+├── PFP/                     <- profile picture(s); read by Noctalia  [YOU PROVIDE]
+└── Wallpapers/              <- wallpapers; read by Noctalia          [YOU PROVIDE]
+```
+
+`config/` is the **source of truth** for dotfiles: it's deployed over `~/.config` on every run. Edit configs here (in the repo), not in `~/.config` directly, or the next deploy overwrites them.
+
+### Usage
+
+```bash
+kyu-setup     # shows the plan, asks for confirmation, then proceeds
+kyu-dry       # optional: plan only, touches nothing
+```
+
+A normal run **shows the plan first** and **asks for confirmation** (`Proceed? [y/N]`) before touching anything. It only continues on `s` (yes).
+
+**Reboot:** the **first full run reboots automatically** (10 s countdown, `Ctrl+C` to cancel). From the second run on it no longer reboots. `kyu-solo` never reboots (partial run).
+
+### Shortcuts (land in PATH after the first run)
+
+| Command | What it does |
+|---|---|
+| `kyu-setup` | Runs the setup from any folder (plan + confirmation) |
+| `kyu-update` | Updates everything: mirrors + repos/AUR (`paru -Syu`) and Flatpaks |
+| `kyu-check` | Healthcheck: validates the result |
+| `kyu-sync` | Dumps your current `~/.config` back into the repo, ready to commit |
+| `kyu-dry` | Simulates the full run without touching anything |
+| `kyu-solo` | Runs only the given section(s): `kyu-solo lista`, `kyu-solo cursor`, `kyu-solo 7,9`. No reboot |
+| `kyu-limpia` | Removes leftovers from old setup versions. Asks for confirmation; doesn't touch the system |
+| `kyu-verifica` | Compares repo dotfiles vs your active `~/.config`, without touching anything |
+| `apps` | Lists or launches any app, **including hidden ones**: `apps` lists, `apps <id>` launches |
+| `proyectar` | Monitor management; `proyectar toggle` (Mod+P) switches mirror ↔ extended |
+
+The Noctalia launcher stays **minimal**: only daily-use apps show; the rest stay installed but hidden. To run a hidden one use `apps` or the terminal (Mod+Return).
+
+### What it does
+
+The setup runs in modular sections. A failure in one doesn't stop the others; real failures are listed at the end.
+
+1. **Pre-setup snapshot** — snapper snapshot before touching anything (if configured for root).
+2. **System update** — `pacman -Syu`.
+3. **Repo packages** — Niri, Zen, Code-OSS, Steam, LibreOffice, OBS, Audacity, VLC, mpv, imv, Foot, Thunar + plugins, Nerd fonts, etc., in a single transaction.
+4. **AUR packages** — Noctalia, terminal toys, Catppuccin, Bibata, rar, in a single helper invocation.
+5. **Flatpak** — installs the Flatpak CLI and enables the **Flathub** remote (install apps from flathub.org over the internet, no local store).
+6. **Sober (Roblox)** — via Flatpak, with its `config.json` and fflags.
+7. **Configs + scripts** — deploys `config/` into `~/.config` (Niri, Noctalia, Foot) with a backup of the previous state, copies `local-bin/`.
+8. **Generables** — "Kyu OS" color scheme, 12h clock (AM/PM), Steam black-window fix, fastfetch with its ASCII logo in Horus purple (`c8a6f9`).
+9. **Launcher cleanup** — hides non-daily apps from the launcher.
+10. **GTK / icons / Thunar** — Papirus violet, Thunar as default, purple file-picker portal.
+11. **Bibata purple cursor** — generates and applies Bibata-Modern-Purple everywhere. The slow part; skipped if already present.
+12. **SDDM Sugar-Dark** — purple Spanish login with a 12h clock.
+13. **Kyu OS branding (systemd-boot)** — boot menu shows "Kyu OS" / "Kyu OS (LTS)", black boot.
+14. **Steam** — a wrapper at `/usr/local/bin/steam` prepending `-cef-disable-gpu` (fixes the CEF client black screen on Intel iGPU).
+15. **Resources & power** — checks PFP/ and Wallpapers/ in the repo and sets the battery charge limit.
+16. **Projection utility** — installs `proyectar` to drive the external monitor via Niri IPC.
+17. **Zen** — Horus theme for native Zen: `policies.json` into `/opt/zen-browser-bin/distribution/`, and `userChrome.css` + `userContent.css` + `user.js` into every `~/.zen` profile. Extensions arrive through **Mozilla account sync** on sign-in; the **Dark Reader** palette is imported manually (`darkreader-horus.json`).
+
+### Horus theme
+
+Purple palette derived from the Eye of Horus, applied across the whole stack (Noctalia, Niri, foot, fastfetch, SDDM, cursor, Zen):
+
+| Role | Hex |
+|---|---|
+| Primary | `#8b45f7` |
+| Secondary | `#c44fe6` |
+| Tertiary | `#e85fb0` |
+| Error | `#fb5c7e` |
+| Base | `#18092b` |
+| Terminal | `#1c0e33` |
+
+### Caveats
+
+The script **removes** redundant software: browsers (Firefox, Chromium, Chrome, Brave → keeps Zen), terminals (Alacritty, Kitty, WezTerm → keeps Foot), file managers (Nautilus, Dolphin, Nemo, Caja, PCManFM → keeps Thunar).
+
+Config deployment **backs up** the previous state into `~/.config-backup-<date>/` before overwriting.
+
+The "Kyu OS" branding is **purely cosmetic**: the system is still CachyOS underneath; `/etc/os-release` is untouched.
+
+The `rar` package is proprietary and conflicts with `unrar`; the script removes `unrar` automatically before installing `rar`.
+
+### Migrating to another machine
+
+Deployment is **one-directional** (the repo overwrites `~/.config`), so anything you tweak via GUI lives only in the active config until you dump it back to the repo.
+
+**On the old machine** — capture and push:
+```bash
+kyu-sync
+cd ~/kyu-os && git add -A && git commit -m "sync configs" && git push
+```
+
+**On the new machine** — one command + Zen's manual steps:
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/Johankyuk/kyu-os/main/bootstrap.sh)
+```
+Then: install `zen-browser-bin`, open Zen once, run `kyu-solo zen`, sign in to your Mozilla account (brings the extensions), and import `config/zen/darkreader-horus.json` in Dark Reader.
+
+**Golden rule:** touch something via GUI → `kyu-sync` + commit before closing.
+
+### Technical notes
+
+- **Per-folder configs:** the `config/` deploy replaced the old sed/heredoc patches. You edit the file, not the script.
+- **Batched installs:** repos in one pacman transaction, AUR in one helper run. On an already-configured machine this drops from minutes to seconds (`--needed` skips what's present).
+- **systemd-boot branding:** the title is set by `/usr/local/bin/kyu-os-title`, reapplied by the `zzz-kyu-branding.hook` after each autogen. The CachyOS splash is disabled (Plymouth out of the initramfs + `plymouth-start.service` masked).
+- **Shutdown (known limitation):** `systemd-shutdown` raises the log level in its final phase, so ~3-4 lines flash for <1 s despite `quiet`. The "going down" broadcast *is* gone, via `--no-wall` in Noctalia's actions.
+- **Battery limit:** a `battery-charge-limit.service` writes the threshold on every boot (no TLP).
+- **Robustness:** `set -uo pipefail` without `set -e` (an isolated failure doesn't abort). No-root guard, network check, sudo keep-alive, prior snapshot, and a failure summary. Logs in `~/.local/state/kyu-os/logs/`.
+- **Idempotency:** safe to run multiple times; detects what's installed and rewrites without duplicating.
