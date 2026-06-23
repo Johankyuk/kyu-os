@@ -1,0 +1,41 @@
+/* Autor: Kyu
+   Kyu OS — userContent.css, acentos quirurgicos a la paleta Horus.
+   NO es tinte global (de eso se encarga Zen Internet). Superficie
+   minima a proposito; se rompe si el sitio rehace su CSS. */
+
+/* ===================== YouTube ===================== */
+@-moz-document domain("youtube.com") {
+  .ytp-play-progress,
+  .ytp-swatch-background-color {
+    background: #8b45f7 !important;
+  }
+  #progress,
+  .ytd-page-manager #progress,
+  yt-page-navigation-progress #progress {
+    background: #8b45f7 !important;
+  }
+  .ytp-scrubber-button {
+    background: #c44fe6 !important;
+  }
+  .ytp-live-badge[disabled],
+  .yt-spec-button-shape-next--call-to-action {
+    background-color: #8b45f7 !important;
+  }
+}
+
+/* ===================== Claude.ai ===================== */
+@-moz-document domain("claude.ai") {
+  /* Best-effort: Claude cambia clases seguido, confirma con Inspector. */
+  button[aria-label*="Send"],
+  button[aria-label*="Enviar"] {
+    background-color: #8b45f7 !important;
+  }
+  a[href],
+  .text-accent-main-100,
+  .text-accent-secondary-100 {
+    color: #b88cf2 !important;
+  }
+  *:focus-visible {
+    outline-color: #8b45f7 !important;
+  }
+}

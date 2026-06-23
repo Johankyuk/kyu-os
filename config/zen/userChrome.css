@@ -1,0 +1,78 @@
+/* Autor: Kyu
+   Kyu OS — userChrome.css, tema Horus para el chrome de Zen.
+   NOTA: los selectores de Zen cambian por version. Si algo no pega,
+   ajusta con el Inspector (chrome debugging). Abajo se prioriza
+   variables sobre selectores profundos para aguantar mejor. */
+
+:root {
+  /* Paleta Horus */
+  --horus-base:        #18092b;
+  --horus-term:        #1c0e33;
+  --horus-primary:     #8b45f7;
+  --horus-secondary:   #c44fe6;
+  --horus-text:        #b88cf2;
+  --horus-subtext:     #a784dd;
+  --horus-outline:     #5031a0;
+  --horus-ring-off:    #4a2a82;
+
+  /* Acento de Zen (varios nombres segun version) */
+  --zen-primary-color: var(--horus-primary) !important;
+  --zen-colors-primary: var(--horus-primary) !important;
+  --zen-colors-secondary: var(--horus-secondary) !important;
+
+  /* Variables estandar de Firefox (fallback) */
+  --lwt-accent-color: var(--horus-base) !important;
+  --toolbar-bgcolor: var(--horus-base) !important;
+  --toolbar-color: var(--horus-text) !important;
+  --tab-selected-bgcolor: var(--horus-outline) !important;
+  --tab-selected-textcolor: #ffffff !important;
+  --toolbar-field-background-color: var(--horus-term) !important;
+  --toolbar-field-focus-background-color: var(--horus-term) !important;
+  --toolbar-field-color: var(--horus-text) !important;
+  --toolbar-field-focus-color: #ffffff !important;
+  --toolbar-field-border-color: transparent !important;
+  --urlbar-box-hover-bgcolor: color-mix(in srgb, var(--horus-primary) 18%, transparent) !important;
+}
+
+/* Fondo general de la ventana */
+#navigator-toolbox,
+#nav-bar,
+#PersonalToolbar {
+  background-color: var(--horus-base) !important;
+}
+
+/* Barra de direcciones */
+#urlbar,
+#searchbar {
+  background-color: var(--horus-term) !important;
+  color: var(--horus-text) !important;
+}
+
+/* Borde de la urlbar al enfocar */
+#urlbar[focused="true"] {
+  outline: 1.5px solid var(--horus-primary) !important;
+  outline-offset: -1px;
+}
+
+/* Pestaña activa */
+.tabbrowser-tab[selected] .tab-background {
+  background-color: var(--horus-outline) !important;
+  border-color: var(--horus-primary) !important;
+}
+
+/* Sidebar de Zen (workspaces / tabs verticales) */
+#zen-sidebar-web-panel,
+#zen-main-app-wrapper,
+.zen-sidebar-web-panel-wrapper {
+  background-color: var(--horus-base) !important;
+}
+
+/* Hovers a primary */
+.tabbrowser-tab:hover .tab-background {
+  background-color: color-mix(in srgb, var(--horus-primary) 14%, transparent) !important;
+}
+
+/* Texto de pestañas */
+.tab-label {
+  color: var(--horus-text) !important;
+}
