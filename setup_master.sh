@@ -1070,7 +1070,7 @@ python3 << 'PYEOF' | write_if_changed "$HOME/.config/fastfetch/config.jsonc" "Co
 import os, json, sys
 config={"$schema":"https://github.com/fastfetch-cli/fastfetch/raw/dev/doc/json_schema.json",
   "logo":{"source":"~/.config/fastfetch/logo.txt","type":"file","padding":{"right":4}},
-  "display":{"color":{"title":"white","keys":"38;2;200;166;249","output":"white","separator":"white"},"percent":{"color":{"green":"38;2;200;166;249","yellow":"38;2;200;166;249","red":"38;2;200;166;249"}}},
+  "display":{"color":{"title":"default","keys":"38;2;200;166;249","output":"default","separator":"default"},"percent":{"color":{"green":"38;2;200;166;249","yellow":"38;2;200;166;249","red":"38;2;200;166;249"}}},
   "modules":[{"type":"os","key":"OS","format":"Kyu OS"},"host","kernel","uptime","packages",
     "shell","display","wm","theme","font","cursor","terminal","terminalfont","cpu","gpu",
     "memory","swap",{"type":"disk","folders":"/"},{"type":"localip","showIpv4":True},
