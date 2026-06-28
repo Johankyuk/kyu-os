@@ -1,16 +1,73 @@
 #!/usr/bin/env bash
-# OSD del brillo del teclado vía wob - Autor: Kyu
+# OSD del brillo del teclado (wob), con la barra en el color del TEMA activo.
+# Autor: Kyu
+#
+# La barra usa el primary del tema —el mismo color del LED del teclado—. La
+# fuente es ~/.config/kyu-os/kbd-color, que kyu-tema reescribe en cada cambio
+# de tema. Este demonio vigila ese archivo: al cambiar de tema, regenera la
+# config de wob y lo reinicia solo, sin tocar nada a mano. La config de wob se
+# genera en XDG_RUNTIME_DIR (efímera): nada que versionar ni que mantener.
 set -uo pipefail
+
 LED=/sys/class/leds/asus::kbd_backlight
-FIFO="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/kyu-kbd-osd.fifo"
-CONF="$HOME/.config/wob/kyu.ini"
+KBD_COLOR="$HOME/.config/kyu-os/kbd-color"
+RT="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+CONF="$RT/kyu-kbd-wob.ini"          # config de wob, generada por tema
+FIFO="$RT/kyu-kbd-osd.fifo"
+
 [ -r "$LED/brightness" ] || { echo "No existe $LED/brightness"; exit 1; }
+command -v wob >/dev/null || { echo "Falta 'wob' (instálalo: el OSD lo necesita)"; exit 1; }
 MAX=$(<"$LED/max_brightness")
 [ -p "$FIFO" ] || mkfifo -m 600 "$FIFO"
-tail -f "$FIFO" | wob -c "$CONF" &
-trap 'kill %1 2>/dev/null' EXIT
+
+# Color del tema activo: hex de 6 sin '#'. Fallback al morado base.
+leer_color() {
+  local c
+  c="$(tr -d '#[:space:]' < "$KBD_COLOR" 2>/dev/null)"
+  [[ "$c" =~ ^[0-9a-fA-F]{6}$ ]] && printf '%s' "$c" || printf '8b45f7'
+}
+
+# Genera el .ini de wob con la barra/borde en el color del tema (alpha FF).
+# El fondo queda en la base casi-negra de Horus (#18092b), neutra para todo tema.
+gen_conf() {
+  local bar="$1"
+  cat > "$CONF" <<WOBEOF
+# Generado por kyu-kbd-osd — no editar (se regenera al cambiar de tema)
+timeout = 800
+border_offset = 4
+border_size = 2
+bar_padding = 4
+height = 36
+width = 320
+background_color = 18092be6
+border_color = ${bar}ff
+bar_color = ${bar}ff
+WOBEOF
+}
+
+# Lanza wob leyendo el FIFO, en su propio grupo de procesos (para reiniciarlo
+# entero —tail + wob— de un solo kill al cambiar de tema).
+WOB_GID=""
+arranca_wob() {
+  [ -n "$WOB_GID" ] && kill -- -"$WOB_GID" 2>/dev/null
+  gen_conf "$(leer_color)"
+  setsid bash -c 'tail -f "$1" | wob -c "$2"' _ "$FIFO" "$CONF" &
+  WOB_GID=$!
+}
+
+trap 'kill -- -"$WOB_GID" 2>/dev/null; exit' EXIT INT TERM
+
+arranca_wob
 prev=$(<"$LED/brightness")
+color_prev="$(leer_color)"
 while :; do
+  # ¿Cambió el tema? -> repinta wob con el color nuevo.
+  color_now="$(leer_color)"
+  if [ "$color_now" != "$color_prev" ]; then
+    color_prev="$color_now"
+    arranca_wob
+  fi
+  # ¿Cambió el brillo del teclado? -> muestra la barra.
   cur=$(<"$LED/brightness")
   if [ "$cur" != "$prev" ]; then
     echo $(( cur * 100 / MAX )) > "$FIFO"

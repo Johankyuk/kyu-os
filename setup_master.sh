@@ -181,6 +181,7 @@ PKGS_AUR=(
     noctalia-shell
     lavat-git cbonsai
     catppuccin-gtk-theme-mocha papirus-folders bibata-cursor-theme rar
+    wob                             # OSD del brillo del teclado (kyu-kbd-osd)
     # Espejo de pantalla para presentaciones (modo 'espejo' de ~/.local/bin/proyectar).
     # Niri no clona salidas de forma nativa; wl-mirror es el unico camino (fragil).
     wl-mirror
@@ -378,7 +379,7 @@ mostrar_plan() {
 # REGISTRO DE SECCIONES (para el flujo normal y para --solo)
 # ============================================================
 # Orden canónico de ejecución. --solo acepta estos nombres o su número.
-SECCIONES=(snapshot update repos aur flatpak opcionales configs generables launcher gtk cursor sddm branding steam recursos proyeccion zen)
+SECCIONES=(snapshot update repos aur flatpak opcionales configs generables launcher gtk cursor sddm branding steam teclado recursos proyeccion zen)
 declare -A SEC_DESC=(
     [snapshot]="Snapshot pre-setup"
     [update]="Actualizar sistema"
@@ -393,6 +394,7 @@ declare -A SEC_DESC=(
     [sddm]="SDDM Sugar-Dark"
     [branding]="Branding Kyu OS (systemd-boot)"
     [steam]="Steam (wrapper anti-pantalla-negra del cliente)"
+    [teclado]="RGB del teclado (regla udev ITE5570)"
     [recursos]="Recursos + batería"
     [proyeccion]="Utilidad de proyección"
     [flatpak]="Flatpak + remoto Flathub"
@@ -404,10 +406,10 @@ declare -A SEC_DESC=(
 # 'recursos' solo usa sudo para el servicio de batería: hereda DO_BATERIA.
 declare -A SEC_SUDO=( [snapshot]=1 [update]=1 [repos]=1 [aur]=1 [opcionales]=1
     [configs]=1 [generables]=0 [launcher]=0 [gtk]=0 [cursor]=0 [sddm]=1 [branding]=1 [steam]=1
-    [recursos]=$DO_BATERIA [proyeccion]=0 [flatpak]=1 [zen]=1 )
+    [teclado]=1 [recursos]=$DO_BATERIA [proyeccion]=0 [flatpak]=1 [zen]=1 )
 declare -A SEC_RED=(  [snapshot]=0 [update]=1 [repos]=1 [aur]=1 [opcionales]=1
     [configs]=0 [generables]=0 [launcher]=0 [gtk]=0 [cursor]=0 [sddm]=0 [branding]=0
-    [steam]=0 [recursos]=0 [proyeccion]=0 [flatpak]=1 [zen]=0 )
+    [steam]=0 [teclado]=0 [recursos]=0 [proyeccion]=0 [flatpak]=1 [zen]=0 )
 
 _tabla_secciones() {
     local i=1 sec
@@ -1657,6 +1659,50 @@ STEAM_EOF
         update-desktop-database "$HOME/.local/share/applications" 2>/dev/null || true
     fi
 fi
+}
+
+# ============================================================
+# SECCIÓN «teclado» — RGB DEL TECLADO (regla udev ITE5570)
+# ============================================================
+# El control RGB (kyu-kbd-color) escribe al teclado por /dev/hidrawN. Sin permisos
+# solo root puede hacerlo. Esta regla da acceso vía el grupo 'input' + el tag
+# uaccess. DOS lecciones aprendidas a fuego, codificadas aquí:
+#   • La regla DEBE numerarse <73 (es 60-...) para que el tag uaccess lo procese
+#     73-seat-late.rules; con un número mayor, uaccess no surte efecto.
+#   • El teclado interno es i2c-HID: la regla NUEVA solo toma efecto tras REINICIAR
+#     ('udevadm trigger' no re-enumera el dispositivo interno). Por eso, si se
+#     instala/cambia la regla, se marca NEED_REBOOT.
+# El grupo 'input' + MODE=0660 es el respaldo por si uaccess fallara.
+sec_teclado() {
+    local src="$SCRIPT_DIR/udev/60-kyu-kbd.rules"
+    local dst="/etc/udev/rules.d/60-kyu-kbd.rules"
+
+    if [ ! -f "$src" ]; then
+        nota "udev/60-kyu-kbd.rules no está en el repo; RGB del teclado sin regla."
+    elif sudo cmp -s "$src" "$dst" 2>/dev/null; then
+        skip "Regla udev del teclado ya instalada y al día."
+    else
+        if sudo install -Dm 0644 "$src" "$dst"; then
+            did "Regla udev del teclado -> $dst"
+            sudo udevadm control --reload-rules 2>/dev/null
+            sudo udevadm trigger --subsystem-match=hidraw 2>/dev/null || true
+            # El teclado i2c interno no re-enumera en caliente: hace falta reiniciar.
+            NEED_REBOOT=1; REBOOT_RAZONES+=("regla udev del teclado (re-enumerar i2c)")
+            nota "El RGB del teclado tomará permisos tras REINICIAR."
+        else
+            fallo "No se pudo instalar la regla udev del teclado."
+        fi
+    fi
+
+    # Respaldo de permisos: el usuario en el grupo 'input' (por si uaccess no aplica).
+    if id -nG "$USER" | grep -qw input; then
+        skip "Usuario ya en el grupo 'input'."
+    elif sudo usermod -aG input "$USER"; then
+        did "Usuario '$USER' agregado al grupo 'input'."
+        NEED_REBOOT=1; REBOOT_RAZONES+=("alta en grupo input")
+    else
+        nota "No se pudo agregar al grupo 'input' (uaccess debería bastar igual)."
+    fi
 }
 
 # ============================================================
